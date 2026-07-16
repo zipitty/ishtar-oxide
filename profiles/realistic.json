@@ -1,0 +1,23 @@
+{
+  "id": "realistic",
+  "description": "Short-lived sessions, background load, randomized dispatch, and coarse release epochs.",
+  "attacker_favorable": false,
+  "max_parallel_turns": 8,
+  "trials": 1000,
+  "synthetic_bits": 1000,
+  "background_sessions": 16,
+  "sender_sessions": 1,
+  "probe_sessions": 2,
+  "turn_fuel": 30000000,
+  "sender_hot_iterations": 5000,
+  "sender_cold_iterations": 500,
+  "probe_iterations": 2500,
+  "wasm_memory_pages": 32,
+  "fixed_response_bytes": 256,
+  "dispatch_jitter_min_us": 250,
+  "dispatch_jitter_max_us": 5000,
+  "release_epoch_us": 10000,
+  "target_overlap_us": [0, 250, 500, 1000, 5000],
+  "session_idle_expiry_ms": 300000,
+  "request_timeout_ms": 15000
+}

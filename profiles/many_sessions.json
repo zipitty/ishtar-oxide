@@ -1,0 +1,23 @@
+{
+  "id": "many-sessions",
+  "description": "One sender and probe pair hidden among many unrelated background sessions.",
+  "attacker_favorable": false,
+  "max_parallel_turns": 32,
+  "trials": 200,
+  "synthetic_bits": 200,
+  "background_sessions": 128,
+  "sender_sessions": 1,
+  "probe_sessions": 1,
+  "turn_fuel": 25000000,
+  "sender_hot_iterations": 4000,
+  "sender_cold_iterations": 400,
+  "probe_iterations": 2000,
+  "wasm_memory_pages": 32,
+  "fixed_response_bytes": 256,
+  "dispatch_jitter_min_us": 500,
+  "dispatch_jitter_max_us": 10000,
+  "release_epoch_us": 10000,
+  "target_overlap_us": [0, 250, 500, 1000, 10000],
+  "session_idle_expiry_ms": 300000,
+  "request_timeout_ms": 15000
+}

@@ -1,0 +1,42 @@
+# Tinfoil Container Configuration
+# Schema: https://docs.tinfoil.sh/containers/configuration
+# Source template checked 2026-07-11:
+# https://github.com/tinfoilsh/tinfoil-containers-template
+cvm-version: 0.10.8
+cpus: 8
+memory: 8192
+
+# No `networks` block: Tinfoil denies container egress by default. The shim's
+# private channel to this first container is created automatically.
+containers:
+  - name: "scheduler"
+    # The public-container release workflow replaces this with the immutable
+    # ghcr.io/${{ github.repository }}@sha256:... reference in the release tag.
+    image: "ghcr.io/zipitty/ishtar-oxide:placeholder"
+    user: "65532:65532"
+    env:
+      - PORT: "8080"
+      - PROFILE_DIR: "/app/profiles"
+      - WASM_PATH: "/app/bench_wasm.wasm"
+      - TINFOIL_CONFIG_PATH: "/tinfoil/config.yml"
+      - TINFOIL_ATTESTATION_PATH: "/tinfoil/attestation.json"
+    secrets:
+      - LAB_ADMIN_TOKEN
+    read_only: true
+    pids_limit: 256
+    restart: on-failure
+    stop_signal: SIGTERM
+    stop_timeout: 10
+    healthcheck:
+      test: ["CMD", "/app/ishtar-scheduler", "__healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+shim:
+  upstream-port: 8080
+  upstream-container: "scheduler"
+  paths:
+    - /health
+    - /v1/*

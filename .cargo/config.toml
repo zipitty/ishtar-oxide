@@ -1,0 +1,5 @@
+[alias]
+wasm = "build --release --target wasm32-unknown-unknown -p bench-wasm"
+
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--max-memory=2097152"]

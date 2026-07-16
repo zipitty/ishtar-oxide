@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+target
+reports
+docs
+implementation_plan.md
+implementation_task.md
+README.md
+*.log
+.env

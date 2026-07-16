@@ -1,0 +1,23 @@
+{
+  "id": "sub-ms-overlap",
+  "description": "Fine-grained overlap sweep centered below one millisecond.",
+  "attacker_favorable": true,
+  "max_parallel_turns": 16,
+  "trials": 600,
+  "synthetic_bits": 600,
+  "background_sessions": 4,
+  "sender_sessions": 1,
+  "probe_sessions": 2,
+  "turn_fuel": 60000000,
+  "sender_hot_iterations": 10000,
+  "sender_cold_iterations": 200,
+  "probe_iterations": 4000,
+  "wasm_memory_pages": 32,
+  "fixed_response_bytes": 256,
+  "dispatch_jitter_min_us": 0,
+  "dispatch_jitter_max_us": 100,
+  "release_epoch_us": 0,
+  "target_overlap_us": [0, 50, 100, 250, 500, 750, 1000, 5000],
+  "session_idle_expiry_ms": 900000,
+  "request_timeout_ms": 20000
+}

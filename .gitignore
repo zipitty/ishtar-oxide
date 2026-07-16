@@ -1,0 +1,8 @@
+/target/
+/reports/*.json
+/.env
+/.idea/
+.DS_Store
+/meta
+
+

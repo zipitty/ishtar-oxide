@@ -1,0 +1,23 @@
+{
+  "id": "attacker-favorable",
+  "description": "Upper-bound raw timing with one isolated probe, sustained overlap, and no response quantization.",
+  "attacker_favorable": true,
+  "max_parallel_turns": 32,
+  "trials": 600,
+  "synthetic_bits": 600,
+  "background_sessions": 0,
+  "sender_sessions": 1,
+  "probe_sessions": 1,
+  "turn_fuel": 120000000,
+  "sender_hot_iterations": 20000,
+  "sender_cold_iterations": 200,
+  "probe_iterations": 8000,
+  "wasm_memory_pages": 32,
+  "fixed_response_bytes": 256,
+  "dispatch_jitter_min_us": 0,
+  "dispatch_jitter_max_us": 0,
+  "release_epoch_us": 0,
+  "target_overlap_us": [0, 250, 500, 1000, 5000, 20000],
+  "session_idle_expiry_ms": 1800000,
+  "request_timeout_ms": 30000
+}
