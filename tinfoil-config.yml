@@ -12,7 +12,7 @@ containers:
   - name: "scheduler"
     # The public-container release workflow replaces this with the immutable
     # ghcr.io/${{ github.repository }}@sha256:... reference in the release tag.
-    image: "ghcr.io/zipitty/ishtar-oxide:placeholder"
+    image: "ghcr.io/zipitty/ishtar-oxide@sha256:7749d1a9635fe8e79cbf5e5db02a63a77a04ddf4eee05c52a09c59dc665bb2b5" # v0.2.0
     user: "65532:65532"
     env:
       - PORT: "8080"
