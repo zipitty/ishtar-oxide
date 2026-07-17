@@ -45,10 +45,13 @@ pub fn apply(policy: Policy) -> Result<()> {
     }
     set_limit(libc::RLIMIT_AS, policy.address_space_bytes)?;
     set_limit(libc::RLIMIT_CPU, policy.cpu_seconds)?;
-    set_limit(libc::RLIMIT_NOFILE, 3)?;
     set_limit(libc::RLIMIT_NPROC, 1)?;
     set_limit(libc::RLIMIT_FSIZE, 0)?;
+    // Landlock needs one temporary ruleset descriptor. It closes that
+    // descriptor when restriction is installed, after which the runner can
+    // safely cap itself to stdin/stdout/stderr only.
     apply_landlock()?;
+    set_limit(libc::RLIMIT_NOFILE, 3)?;
     apply_seccomp()?;
     Ok(())
 }
@@ -128,6 +131,17 @@ fn apply_seccomp() -> Result<()> {
         vec![SeccompRule::new(vec![masked_zero(
             2,
             libc::PROT_EXEC as u64,
+        )?])?],
+    );
+    // Wasmi initializes internal randomized hash state after the sandbox is
+    // installed. The guest has no import or ABI path to observe these bytes.
+    rules.insert(
+        libc::SYS_getrandom,
+        vec![SeccompRule::new(vec![SeccompCondition::new(
+            1,
+            SeccompCmpArgLen::Qword,
+            SeccompCmpOp::Le,
+            32,
         )?])?],
     );
     rules.insert(libc::SYS_write, vec![fd_rule(1)?, fd_rule(2)?]);
