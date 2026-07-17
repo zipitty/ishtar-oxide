@@ -1,30 +1,54 @@
 # Threat model
 
-## Measured question
+## Goal
 
-Can cooperating restricted-WASM turns in independent anonymous sessions communicate synthetic bits through CPU or memory contention, as observed through public HTTP completion timing? The external client owns the clock and chooses sender/probe overlap. Server records are administrative ground truth for analysis, not an observation available to an ordinary session.
+Run hostile, unattested core WebAssembly without giving it a direct primary channel for exporting
+data. The scheduler and its sandbox are attested; the startup worker module is intentionally not.
+The practical purpose is evidence that the operator cannot silently give a worker an identifying or
+output-bearing host interface.
 
-## Attacker capabilities
+## Guaranteed boundary
 
-The attacker can create many sessions, retain their bearer tokens, choose allowlisted profiles and synthetic sender bits, issue parallel turns, and measure end-to-end latency. The attacker knows all public source and benchmark WASM. Attacker-favorable profiles deliberately maximize overlap and lifetime; realistic profiles add unrelated sessions, jitter, fuel bounds, release epochs, and five-minute idle expiry.
+Workers have computation and private linear memory only. They receive no input, identity, imports,
+WASI, environment, inherited descriptors, filesystem, network, clock, randomness, threads, or
+shared memory. The only callable ABI is `run: () -> ()`; all guest results and diagnostics are
+discarded.
 
-Session identifiers are routing labels, not authorization. A 256-bit random bearer token authorizes one RAM-only session. Tokens are never logged or passed to WASM; the server stores only SHA-256 hashes and compares hashes in constant time.
+There is no public upload route. At startup the trusted scheduler makes one redirect-free HTTPS GET
+to a secret URL, bounds the response, and requires a valid versioned AES-256-GCM envelope under a
+separate 256-bit secret key. A third secret is sent only as a sensitive HTTPS bearer-authorization
+header. It stores the decrypted module and its SHA-256 only in memory and removes all startup secrets
+from the environment before creating runtime threads. Tinfoil egress and the scheduler's URL parser
+independently restrict the pull to `artifacts.kkbr.ai` over HTTPS port 443; the scheduler makes no
+further outbound request, and runner seccomp permits no network syscall.
 
-## In scope
+After global admission, trusted policy selects a fixed one-second slot before parsing begins. The
+runner is terminated at its deadline and the scheduler retains the slot permit until that deadline.
+Validation failure, instantiation failure, early completion, trap, fuel exhaustion, runner failure,
+and deadline termination all return HTTP 200 with the same serialized response at the slot release.
+Caller disconnect does not cancel the slot task.
 
-- scheduling, CPU-cache, memory-bandwidth, and allocator/process-start contention visible in HTTP timing;
-- BER, false-positive/negative rates, binary mutual information, reliable bits/hour, overlap, latency, and utilization;
-- explicit comparison of raw upper bounds, realistic profiles, and mandatory no-signal controls.
+The child buffers bounded bytes, clears its environment, closes every descriptor above stderr,
+applies no-new-privileges and rlimits, enters a filesystem-denying Landlock domain, installs a
+kill-by-default seccomp allowlist, and only then parses and instantiates the module.
 
-## Out of scope
+## Explicitly accepted risk
 
-- real prompts, secrets, model weights, production tenants, arbitrary module upload, native ELF, WASI, JITs, Spectre-class microarchitectural exploitation, host/enclave compromise, traffic analysis outside the endpoint, and denial of service;
-- proving all covert channels absent. Measurements characterize only the named hardware, image, Tinfoil configuration, scheduler/WASM hashes, profile, client placement, and run.
+Queue and admission timing, denial of service within fixed limits, CPU caches, memory bandwidth,
+branch predictors, TLBs, allocator behavior, process creation, CPU frequency, thermals, SMT, and
+other scheduler or microarchitectural side channels may leak information. Fixed slots reduce a
+worker's direct completion-time alphabet but do not eliminate these channels. No claim of constant
+time, non-interference, or Spectre resistance is made.
 
-## Statistical interpretation
+Workers receive no identifying information, so a side channel can at most expose state already
+present in or inferable through the shared execution environment; it is not given a tenant identity
+or response payload to export directly. Host compromise, kernel or confidential-VM compromise,
+sandbox/runtime vulnerabilities, availability, and traffic analysis outside the endpoint are also
+outside the guarantee.
 
-The client uses a seeded balanced/randomized bit-by-overlap schedule so bit values are not confounded with cyclic overlap offsets. It reserves five examples of each bit at every offset for calibration, averages all successful probe latencies in a trial, fits a separate threshold and direction for each offset, and scores only held-out trials.
+## Trusted computing base
 
-Raw plug-in mutual information is retained for auditability, but it is positively biased in finite samples. The report therefore permutes expected bits within overlap strata to estimate the chance baseline and p-value. `corrected_reliable_bits_per_hour` subtracts the mean permutation baseline; the headline `reliable_bits_per_hour` additionally requires `permutation_p_value <= 0.05`. `raw_information_bits_observed` and `corrected_information_bits_observed` show what the run itself measured, avoiding confusion between observed information and an hourly extrapolation.
-
-The provisional realistic-profile concern threshold is 10 headline reliable bits/hour. It is a triage value, not a security proof or release gate by itself. A signal run must also be repeated across seeds and compared with its mandatory no-signal control; `p <= 0.05` is evidence against this benchmark's null model, not proof of exploitability.
+The production TCB is the scheduler request/admission path, runner launcher, sandbox setup,
+`wasmparser`, the `wasmi` interpreter, the kernel controls, and the attested container configuration.
+Benchmark profiles, roles, synthetic-bit controls, experiment APIs, the benchmark client, and the
+synthetic benchmark guest are excluded from the production image.

@@ -14,60 +14,16 @@ use seccompiler::{
 use std::{collections::BTreeMap, convert::TryInto};
 
 #[derive(Debug, Clone, Copy)]
-pub struct SandboxPolicy {
+pub struct Policy {
     pub address_space_bytes: u64,
     pub cpu_seconds: u64,
-    pub open_files: u64,
 }
 
-#[derive(Debug, Clone)]
-pub struct SandboxStatus {
-    pub no_new_privs_applied: bool,
-    pub rlimits_applied: bool,
-    pub seccomp_applied: bool,
-    pub landlock_applied: bool,
-    pub notes: Vec<String>,
-}
-
-impl SandboxStatus {
-    pub fn verify_required(&self) -> Result<()> {
-        let fully_applied = self.no_new_privs_applied
-            && self.rlimits_applied
-            && self.seccomp_applied
-            && self.landlock_applied;
-        if cfg!(target_os = "linux") && !fully_applied {
-            anyhow::bail!(
-                "required runner sandbox was not fully applied: {:?}",
-                self.notes
-            );
-        }
-        let _ = (&self.notes, fully_applied);
-        Ok(())
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub fn apply_runner_sandbox(policy: &SandboxPolicy) -> Result<SandboxStatus> {
-    set_no_new_privs()?;
-    apply_rlimits(policy)?;
-    apply_landlock()?;
-    apply_seccomp()?;
-    Ok(SandboxStatus {
-        no_new_privs_applied: true,
-        rlimits_applied: true,
-        seccomp_applied: true,
-        landlock_applied: true,
-        notes: vec!["filesystem-denying Landlock and seccomp installed before parsing".into()],
-    })
-}
-
-/// Leaves stdin/stdout/stderr only. The module is already buffered in memory.
 pub fn close_inherited_descriptors() -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         // SAFETY: close_range has no memory-safety preconditions.
-        let result = unsafe { libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, 0u32) };
-        if result != 0 {
+        if unsafe { libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, 0u32) } != 0 {
             bail!("close_range failed: {}", std::io::Error::last_os_error());
         }
     }
@@ -80,55 +36,26 @@ pub fn close_inherited_descriptors() -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn apply_landlock() -> Result<()> {
-    let abi = ABI::V3;
-    let status = Ruleset::default()
-        .handle_access(AccessFs::from_all(abi))?
-        .set_compatibility(CompatLevel::HardRequirement)
-        .create()?
-        // No rules deliberately grants no filesystem paths.
-        .restrict_self()?;
-    if status.ruleset != RulesetStatus::FullyEnforced {
-        bail!("Landlock filesystem policy was not fully enforced");
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn apply_runner_sandbox(policy: &SandboxPolicy) -> Result<SandboxStatus> {
-    let _ = (
-        policy.address_space_bytes,
-        policy.cpu_seconds,
-        policy.open_files,
-    );
-    Ok(SandboxStatus {
-        no_new_privs_applied: false,
-        rlimits_applied: false,
-        seccomp_applied: false,
-        landlock_applied: false,
-        notes: vec!["Linux sandbox controls are unavailable on this host".into()],
-    })
-}
-
-#[cfg(target_os = "linux")]
-fn set_no_new_privs() -> Result<()> {
-    // SAFETY: prctl is called with the documented PR_SET_NO_NEW_PRIVS signature.
+pub fn apply(policy: Policy) -> Result<()> {
     if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
         bail!(
             "PR_SET_NO_NEW_PRIVS failed: {}",
             std::io::Error::last_os_error()
         );
     }
+    set_limit(libc::RLIMIT_AS, policy.address_space_bytes)?;
+    set_limit(libc::RLIMIT_CPU, policy.cpu_seconds)?;
+    set_limit(libc::RLIMIT_NOFILE, 3)?;
+    set_limit(libc::RLIMIT_NPROC, 1)?;
+    set_limit(libc::RLIMIT_FSIZE, 0)?;
+    apply_landlock()?;
+    apply_seccomp()?;
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-fn apply_rlimits(policy: &SandboxPolicy) -> Result<()> {
-    set_limit(libc::RLIMIT_AS, policy.address_space_bytes)?;
-    set_limit(libc::RLIMIT_CPU, policy.cpu_seconds)?;
-    set_limit(libc::RLIMIT_NOFILE, policy.open_files)?;
-    set_limit(libc::RLIMIT_NPROC, 1)?;
-    set_limit(libc::RLIMIT_FSIZE, 0)?;
+#[cfg(not(target_os = "linux"))]
+pub fn apply(policy: Policy) -> Result<()> {
+    let _ = (policy.address_space_bytes, policy.cpu_seconds);
     Ok(())
 }
 
@@ -138,7 +65,6 @@ fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> Result<()> {
         rlim_cur: value,
         rlim_max: value,
     };
-    // SAFETY: limit points to a valid rlimit and resource is an RLIMIT_* constant.
     if unsafe { libc::setrlimit(resource, &limit) } != 0 {
         bail!("setrlimit failed: {}", std::io::Error::last_os_error());
     }
@@ -146,9 +72,22 @@ fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
+fn apply_landlock() -> Result<()> {
+    let abi = ABI::V3;
+    let status = Ruleset::default()
+        .handle_access(AccessFs::from_all(abi))?
+        .set_compatibility(CompatLevel::HardRequirement)
+        .create()?
+        .restrict_self()?;
+    if status.ruleset != RulesetStatus::FullyEnforced {
+        bail!("Landlock was not fully enforced");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 fn apply_seccomp() -> Result<()> {
     let mut rules = BTreeMap::new();
-
     for syscall in [
         libc::SYS_brk,
         libc::SYS_madvise,
@@ -166,7 +105,6 @@ fn apply_seccomp() -> Result<()> {
     ] {
         rules.insert(syscall, vec![]);
     }
-
     rules.insert(
         libc::SYS_mmap,
         vec![SeccompRule::new(vec![
@@ -177,9 +115,6 @@ fn apply_seccomp() -> Result<()> {
                 SeccompCmpOp::MaskedEq(libc::MAP_ANONYMOUS as u64),
                 libc::MAP_ANONYMOUS as u64,
             )?,
-            // `fd` is a C `int`. Its upper 32 bits in seccomp_data are not part
-            // of the syscall ABI and are not consistently sign-extended across
-            // architectures, so compare the actual 32-bit value of `-1`.
             SeccompCondition::new(
                 4,
                 SeccompCmpArgLen::Dword,
@@ -195,22 +130,19 @@ fn apply_seccomp() -> Result<()> {
             libc::PROT_EXEC as u64,
         )?])?],
     );
-
     rules.insert(libc::SYS_write, vec![fd_rule(1)?, fd_rule(2)?]);
     rules.insert(libc::SYS_writev, vec![fd_rule(1)?, fd_rule(2)?]);
-
     let filter: BpfProgram = SeccompFilter::new(
         rules,
         SeccompAction::KillProcess,
         SeccompAction::Allow,
         std::env::consts::ARCH
             .try_into()
-            .context("unsupported seccomp target architecture")?,
-    )
-    .context("construct runner seccomp filter")?
+            .context("unsupported seccomp architecture")?,
+    )?
     .try_into()
-    .context("compile runner seccomp BPF")?;
-    seccompiler::apply_filter(&filter).context("install runner seccomp filter")?;
+    .context("compile seccomp BPF")?;
+    seccompiler::apply_filter(&filter).context("install seccomp filter")?;
     Ok(())
 }
 

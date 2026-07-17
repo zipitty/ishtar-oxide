@@ -1,23 +1,30 @@
 [package]
-name = "ishtar-scheduler"
+name = "ishtar-sequential-lab"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["bench"]
+bench = ["dep:reqwest", "dep:serde_json"]
+
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
-base64.workspace = true
+clap.workspace = true
 hex.workspace = true
 libc.workspace = true
-reqwest.workspace = true
-ring = "0.17.14"
+reqwest = { workspace = true, optional = true }
 serde.workspace = true
+serde_json = { workspace = true, optional = true }
 sha2.workspace = true
+subtle.workspace = true
 tokio.workspace = true
+tower-http.workspace = true
 wasmi.workspace = true
 wasmparser.workspace = true
+wat = "1.253.0"
 zeroize = "1.9.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -25,6 +32,4 @@ landlock = "0.4.5"
 seccompiler = "0.5.0"
 
 [dev-dependencies]
-getrandom.workspace = true
 tower = { version = "0.5.3", features = ["util"] }
-wat = "1.253.0"

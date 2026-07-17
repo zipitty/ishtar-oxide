@@ -167,37 +167,55 @@ async fn run_matrix(args: RunArgs) -> Result<()> {
         .await?;
 
     let clock = Arc::new(Instant::now());
-    let mut client_records = Vec::new();
-    let mut expected_bits = Vec::with_capacity(trial_plan.len());
-    for (trial_id, planned) in trial_plan.iter().copied().enumerate() {
-        let result = run_trial_group(
-            &client,
-            &args.base_url,
-            &profile,
-            &sender,
-            &probes,
-            &backgrounds,
-            trial_id as u64,
-            planned,
-            args.control,
-            clock.clone(),
-        )
-        .await?;
-        client_records.extend(result.records);
-        expected_bits.push(result.expected_bit);
-    }
+    let traffic = async {
+        let mut client_records = Vec::new();
+        let mut expected_bits = Vec::with_capacity(trial_plan.len());
+        for (trial_id, planned) in trial_plan.iter().copied().enumerate() {
+            let result = run_trial_group(
+                &client,
+                &args.base_url,
+                &profile,
+                &sender,
+                &probes,
+                &backgrounds,
+                trial_id as u64,
+                planned,
+                args.control,
+                clock.clone(),
+            )
+            .await?;
+            client_records.extend(result.records);
+            expected_bits.push(result.expected_bit);
+        }
+        Ok::<_, anyhow::Error>((client_records, expected_bits))
+    };
+    let traffic_result = tokio::select! {
+        result = traffic => result,
+        interrupt = tokio::signal::ctrl_c() => {
+            interrupt.context("install Ctrl-C handler")?;
+            Err(anyhow::anyhow!("benchmark interrupted"))
+        }
+    };
 
-    run = client
-        .post(endpoint(
-            &args.base_url,
-            &format!("/v1/experiments/{}/stop", run.run_id),
-        ))
-        .header("x-lab-admin-token", &args.admin_token)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    // Always attempt to close the active experiment after traffic starts. This
+    // keeps a resumable campaign from wedging the server after a transient
+    // request failure or Ctrl-C.
+    let stopped_run: Result<ExperimentRunInfo> = async {
+        Ok(client
+            .post(endpoint(
+                &args.base_url,
+                &format!("/v1/experiments/{}/stop", run.run_id),
+            ))
+            .header("x-lab-admin-token", &args.admin_token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
+    }
+    .await;
+    let (mut client_records, expected_bits) = traffic_result?;
+    run = stopped_run.context("stop experiment")?;
     let server_records: Vec<ServerTimingRecord> = client
         .get(endpoint(
             &args.base_url,
@@ -236,6 +254,7 @@ async fn run_matrix(args: RunArgs) -> Result<()> {
         &calibration,
         calibration.scoring_starts_at_trial,
         args.seed,
+        args.control,
     );
     write_report(&report, &args.output)?;
     println!(
@@ -485,6 +504,7 @@ fn compute_report(
     calibration: &CalibrationModel,
     calibration_trials: u64,
     seed: u64,
+    control: bool,
 ) -> LeakageReport {
     let mut decoded_by_trial = HashMap::new();
     for r in client_records
@@ -551,6 +571,8 @@ fn compute_report(
     LeakageReport {
         run_id: run_info.run_id.clone(),
         profile_id: run_info.profile.id.clone(),
+        seed,
+        control,
         run_info: run_info.clone(),
         synthetic_bits: expected_bits.to_vec(),
         target_overlap_us_by_trial: trial_plan

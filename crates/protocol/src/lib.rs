@@ -221,6 +221,12 @@ pub struct OffsetLeakageSummary {
 pub struct LeakageReport {
     pub run_id: String,
     pub profile_id: String,
+    /// Client seed used to build the balanced trial schedule.
+    #[serde(default)]
+    pub seed: u64,
+    /// True for a no-signal control run.
+    #[serde(default)]
+    pub control: bool,
     pub run_info: ExperimentRunInfo,
     pub synthetic_bits: Vec<u8>,
     pub target_overlap_us_by_trial: Vec<u64>,

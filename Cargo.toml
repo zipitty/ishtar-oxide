@@ -4,6 +4,7 @@ members = [
     "crates/scheduler",
     "crates/bench-client",
     "crates/bench-wasm",
+    "crates/sequential-lab",
 ]
 resolver = "2"
 

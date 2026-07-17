@@ -66,11 +66,10 @@ jobs:
           SOURCE_DATE_EPOCH: 0
         with:
           context: .
+          file: Dockerfile.sequential-lab
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            GIT_COMMIT=${{ github.sha }}
 
   prepare-release:
     needs: build
