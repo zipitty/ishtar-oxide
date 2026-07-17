@@ -56,6 +56,67 @@ pub fn execute(
     Ok(output)
 }
 
+pub fn execute_stream(
+    module_bytes: &[u8],
+    previous: &[u8],
+    chunk: &[u8],
+    capacity: usize,
+    fuel: u64,
+    max_memory_pages: u32,
+) -> Result<Zeroizing<Vec<u8>>> {
+    if previous.len().saturating_add(chunk.len()) > capacity {
+        bail!("stream state exceeds capacity");
+    }
+    validate(module_bytes, max_memory_pages)?;
+    let engine = engine();
+    let module = Module::new(&engine, module_bytes).context("compile stream module")?;
+    let limits = StoreLimitsBuilder::new()
+        .memory_size(max_memory_pages as usize * 65_536)
+        .memories(1)
+        .instances(1)
+        .tables(1)
+        .table_elements(100_000)
+        .trap_on_grow_failure(true)
+        .build();
+    let mut store = Store::new(&engine, StoreState { limits });
+    store.limiter(|store| &mut store.limits);
+    store.set_fuel(fuel).context("set stream fuel")?;
+    let instance = Linker::new(&engine)
+        .instantiate_and_start(&mut store, &module)
+        .context("instantiate stream module")?;
+    let memory = instance
+        .get_memory(&store, "memory")
+        .context("stream module must export memory")?;
+    let combined_len = previous.len() + chunk.len();
+    if capacity > memory.data(&store).len() {
+        bail!("stream capacity exceeds guest memory");
+    }
+    memory
+        .write(&mut store, 0, previous)
+        .context("rehydrate stream state")?;
+    memory
+        .write(&mut store, previous.len(), chunk)
+        .context("inject stream chunk")?;
+    let process = instance
+        .get_typed_func::<(i32, i32, i32), i32>(&store, "process")
+        .context("stream module must export process(i32,i32,i32)->i32")?;
+    let output_len = process
+        .call(
+            &mut store,
+            (previous.len() as i32, chunk.len() as i32, capacity as i32),
+        )
+        .context("execute stream chunk")?;
+    if output_len < 0 || output_len as usize != combined_len {
+        bail!("stream worker returned invalid accumulated length");
+    }
+    let mut output = Zeroizing::new(vec![0; combined_len]);
+    memory
+        .read(&store, 0, &mut output)
+        .context("extract accumulated stream state")?;
+    memory.data_mut(&mut store).fill(0);
+    Ok(output)
+}
+
 fn validate(bytes: &[u8], max_memory_pages: u32) -> Result<()> {
     Validator::new()
         .validate_all(bytes)
@@ -144,5 +205,14 @@ mod tests {
         )
         .unwrap();
         assert!(execute(&import, &[0; 1], 1, 0, 1, 1000, 1).is_err());
+    }
+
+    #[test]
+    fn stream_fixture_rehydrates_and_capitalizes() {
+        let module = wat::parse_str(include_str!("../fixtures/stream_capitalize.wat")).unwrap();
+        let first = execute_stream(&module, b"", b"lorem ", 1024, 1_000_000, 16).unwrap();
+        assert_eq!(&*first, b"LOREM ");
+        let second = execute_stream(&module, &first, b"ipsum!", 1024, 1_000_000, 16).unwrap();
+        assert_eq!(&*second, b"LOREM IPSUM!");
     }
 }

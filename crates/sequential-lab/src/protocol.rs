@@ -42,9 +42,47 @@ pub struct HealthResponse {
     pub probe_iterations: u32,
     pub execution_cutoff_us: u64,
     pub release_slot_us: u64,
+    pub stream_wasm_sha256: String,
+    pub stream_state_bytes: usize,
+    pub max_chunk_bytes: usize,
+    pub max_pending: usize,
     pub successful_turns: u64,
     pub timed_out_turns: u64,
     pub failed_turns: u64,
+    pub throttled_turns: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamChunkRequest {
+    pub session_slot: u16,
+    pub sequence: u64,
+    pub chunk: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamResetRequest {
+    pub session_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamChunkResponse {
+    pub outcome: String,
+    pub session_slot: u16,
+    pub sequence: u64,
+    pub accumulated_chunks: u64,
+    pub accumulated_bytes: usize,
+    pub queue_wait_us: u64,
+    pub execution_us: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamStateResponse {
+    pub session_slot: u16,
+    pub accumulated_chunks: u64,
+    pub accumulated_bytes: usize,
+    pub sha256: String,
 }
 
 #[cfg(feature = "bench")]
@@ -99,4 +137,59 @@ pub struct BenchmarkReport {
     pub server: HealthResponse,
     pub gap_summaries: Vec<GapSummary>,
     pub records: Vec<TrialRecord>,
+}
+
+#[cfg(feature = "bench")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamChunkRecord {
+    pub session_slot: u16,
+    pub sequence: u64,
+    pub scheduled_offset_us: u64,
+    pub request_offset_us: u64,
+    pub latency_us: u64,
+    pub outcome: String,
+    pub queue_wait_us: Option<u64>,
+    pub execution_us: Option<u64>,
+}
+
+#[cfg(feature = "bench")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamScenarioReport {
+    pub session_count: usize,
+    pub target_chunks_per_second: f64,
+    pub duration_ms: u64,
+    pub offered_chunks: u64,
+    pub attempted_chunks: u64,
+    pub completed_chunks: u64,
+    pub throttled_chunks: u64,
+    pub server_throttled_chunks: u64,
+    pub client_backpressured_chunks: u64,
+    pub failed_chunks: u64,
+    pub min_completed_per_session: u64,
+    pub max_completed_per_session: u64,
+    pub achieved_chunks_per_second: f64,
+    pub completion_ratio: f64,
+    pub latency_p50_us: u64,
+    pub latency_p95_us: u64,
+    pub latency_p99_us: u64,
+    pub queue_wait_p50_us: u64,
+    pub queue_wait_p95_us: u64,
+    pub queue_wait_p99_us: u64,
+    pub execution_p50_us: u64,
+    pub execution_p95_us: u64,
+    pub execution_p99_us: u64,
+    pub verified_sessions: usize,
+    pub state_mismatches: usize,
+    pub records: Vec<StreamChunkRecord>,
+}
+
+#[cfg(feature = "bench")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamBenchmarkReport {
+    pub schema_version: u32,
+    pub chunk_bytes: usize,
+    pub duration_secs: u64,
+    pub lorem_sha256: String,
+    pub server: HealthResponse,
+    pub scenarios: Vec<StreamScenarioReport>,
 }

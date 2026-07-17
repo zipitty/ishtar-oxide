@@ -22,3 +22,4 @@ shim:
   paths:
     - /health
     - /v1/turn
+    - /v1/stream/*
