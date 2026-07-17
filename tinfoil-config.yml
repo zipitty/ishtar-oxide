@@ -6,7 +6,7 @@ memory: 8192
 # No networks block: the lab has no outbound network.
 containers:
   - name: "sequential-lab"
-    image: "ghcr.io/zipitty/ishtar-oxide:placeholder"
+    image: "ghcr.io/zipitty/ishtar-oxide@sha256:60dc31ae82e9385b7dba1b1251ed722069b7c541b7eb70ba9232473d037adab8" # v0.4.0
     user: "65532:65532"
     secrets:
       - LAB_ADMIN_TOKEN
